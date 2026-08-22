@@ -1,1 +1,56 @@
+name: Build Android APK
 
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Android SDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Encontrar ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+          echo "ZIP encontrado: $ZIP_FILE"
+          unzip -q "$ZIP_FILE" -d build-src
+
+      - name: Buscar proyecto
+        run: |
+          echo "Contenido:"
+          find build-src -maxdepth 3 -type f | head -100
+
+      - name: Compilar APK
+        run: |
+          PROJECT_DIR=$(find build-src -name settings.gradle -o -name settings.gradle.kts | head -n 1 | xargs dirname)
+          echo "Proyecto: $PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          gradle assembleDebug --no-daemon
+
+      - name: Subir APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardGame-debug-apk
+          path: "**/app/build/outputs/apk/debug/app-debug.apk"
+          if-no-files-found: error
