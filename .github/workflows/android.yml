@@ -1,56 +1,111 @@
-name: Build Android APK
+name: Build Android APK V2
 
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+      - principal
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar proyecto
+      - name: Descargar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar Android SDK
+      - name: Instalar SDK de Android
         run: |
+          yes | sdkmanager --licenses || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.10.2"
+          gradle-version: '8.10.2'
 
-      - name: Encontrar ZIP
+      - name: Buscar ZIP V2
         run: |
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
-          echo "ZIP encontrado: $ZIP_FILE"
+          echo "Buscando el proyecto V2..."
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f \
+            -iname '*V2*FIXED*.zip' | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No se encontró el ZIP V2 FIXED."
+            echo "Archivos ZIP encontrados:"
+            find . -maxdepth 1 -type f -iname '*.zip' -print
+            exit 1
+          fi
+
+          echo "ZIP encontrado:"
+          echo "$ZIP_FILE"
+
+          rm -rf build-src
+          mkdir -p build-src
+
           unzip -q "$ZIP_FILE" -d build-src
 
-      - name: Buscar proyecto
-        run: |
-          echo "Contenido:"
+          echo "Contenido extraído:"
           find build-src -maxdepth 3 -type f | head -100
 
-      - name: Compilar APK
+      - name: Encontrar proyecto Android
         run: |
-          PROJECT_DIR=$(find build-src -name settings.gradle -o -name settings.gradle.kts | head -n 1 | xargs dirname)
-          echo "Proyecto: $PROJECT_DIR"
-          cd "$PROJECT_DIR"
-          gradle assembleDebug --no-daemon
+          PROJECT_DIR=$(find build-src \
+            -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print -quit | xargs -r dirname)
 
-      - name: Subir APK
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: No se encontró settings.gradle."
+            exit 1
+          fi
+
+          echo "Proyecto Android encontrado en:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Mostrar estructura del proyecto
+        run: |
+          echo "Proyecto:"
+          find "$PROJECT_DIR" -maxdepth 4 -type f | head -150
+
+      - name: Dar permisos a Gradle
+        run: |
+          chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Compilar APK V2
+        run: |
+          cd "$PROJECT_DIR"
+
+          echo "Compilando proyecto V2..."
+          ./gradlew clean assembleDebug --no-daemon
+
+      - name: Buscar APK generado
+        run: |
+          echo "APK encontrados:"
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -print
+
+      - name: Subir APK V2
         uses: actions/upload-artifact@v4
         with:
-          name: CardGame-debug-apk
-          path: "**/app/build/outputs/apk/debug/app-debug.apk"
+          name: CardGame-V2-APK
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 7
